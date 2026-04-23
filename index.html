@@ -6,155 +6,27 @@
     <title>Сканер Калорий</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-        :root {
-            --bg-color: #121212;
-            --text-color: #ffffff;
-            --accent: #ff9800;
-            --input-bg: #1e1e1e;
-            --success: #4CAF50;
-        }
-        body {
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-        }
-        h2 { margin-bottom: 10px; font-weight: 600; }
-        p { color: #aaa; font-size: 14px; margin-bottom: 30px; }
-        
-        /* Кнопка запуска камеры */
-        .camera-btn-wrapper { width: 100%; max-width: 300px; }
-        .camera-btn {
-            display: block;
-            background-color: var(--accent);
-            color: #000;
-            padding: 20px;
-            font-size: 18px;
-            font-weight: bold;
-            border: none;
-            border-radius: 20px;
-            cursor: pointer;
-            box-shadow: 0 10px 20px rgba(255, 152, 0, 0.3);
-            transition: all 0.3s ease;
-            text-align: center;
-        }
-        .camera-btn:active { transform: scale(0.95); box-shadow: 0 5px 10px rgba(255, 152, 0, 0.2); }
-        input[type="file"] { display: none; }
-
-        /* Превью изображения */
-        #imagePreview {
-            width: 100%;
-            max-width: 300px;
-            border-radius: 20px;
-            margin-top: 20px;
-            display: none;
-            object-fit: cover;
-            border: 2px solid var(--accent);
-        }
-
-        /* Контейнер формы с анимацией */
-        .form-container {
-            display: none;
-            width: 100%;
-            max-width: 350px;
-            background: var(--input-bg);
-            padding: 25px;
-            border-radius: 25px;
-            margin-top: 20px;
-            text-align: left;
-            box-sizing: border-box;
-            box-shadow: 0 15px 35px rgba(0,0,0,0.5);
-            /* Анимация появления */
-            opacity: 0;
-            transform: translateY(40px);
-            transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        }
-        .form-container.show {
-            display: block;
-            opacity: 1;
-            transform: translateY(0);
-        }
-
-        label { display: block; margin-bottom: 5px; font-size: 14px; color: var(--accent); font-weight: 500; }
-        input[type="text"] {
-            width: 100%;
-            padding: 14px;
-            margin-bottom: 15px;
-            border: 1px solid #333;
-            border-radius: 12px;
-            background: #252525;
-            color: white;
-            box-sizing: border-box;
-            font-size: 16px;
-        }
-        
-        .submit-btn {
-            background: var(--success);
-            color: white;
-            width: 100%;
-            padding: 16px;
-            border: none;
-            border-radius: 15px;
-            font-size: 18px;
-            font-weight: bold;
-            margin-top: 10px;
-            cursor: pointer;
-            transition: background 0.3s;
-        }
-        .submit-btn:active { opacity: 0.8; }
-
-        /* Статусы */
-        #loader { display: none; margin-top: 30px; font-weight: bold; color: var(--accent); }
-        #result {
-            margin-top: 20px;
-            padding: 20px;
-            background: #1e1e1e;
-            border-radius: 20px;
-            text-align: left;
-            display: none;
-            width: 100%;
-            max-width: 350px;
-            line-height: 1.5;
-            border-left: 4px solid var(--accent);
-        }
+        :root { --bg: #121212; --txt: #fff; --acc: #ff9800; }
+        body { font-family: sans-serif; background: var(--bg); color: var(--txt); padding: 20px; text-align: center; }
+        .btn { background: var(--acc); color: #000; padding: 15px; border-radius: 15px; font-weight: bold; cursor: pointer; display: inline-block; width: 100%; border: none; margin-top: 10px; }
+        input[type="text"] { width: 100%; padding: 12px; margin: 10px 0; border-radius: 10px; border: 1px solid #333; background: #222; color: #fff; box-sizing: border-box; }
+        #loader { display: none; color: var(--acc); margin-top: 20px; }
+        #result { display: none; background: #222; padding: 15px; border-radius: 15px; margin-top: 20px; text-align: left; border-left: 4px solid var(--acc); }
+        img { max-width: 100%; border-radius: 15px; margin-top: 15px; display: none; }
     </style>
 </head>
 <body>
-
-    <h2>Умный счетчик 🍏</h2>
-    <p>Анализ рациона по фото за секунды</p>
-
-    <div class="camera-btn-wrapper" id="startWrapper">
-        <label class="camera-btn">
-            📸 СФОТКАТЬ ЕДУ
-            <input type="file" accept="image/*" capture="environment" id="fileInput">
-        </label>
+    <h3>Сканер еды 🍏</h3>
+    <label class="btn">📸 СФОТКАТЬ ЕДУ
+        <input type="file" accept="image/*" capture="environment" id="fileInput" style="display:none">
+    </label>
+    <img id="preview">
+    <div id="form" style="display:none">
+        <input type="text" id="dishName" placeholder="Название (опционально)">
+        <input type="text" id="weight" placeholder="Примерный вес (г)">
+        <button class="btn" onclick="sendData()" style="background:#4CAF50; color:#fff">АНАЛИЗИРОВАТЬ 🚀</button>
     </div>
-
-    <img id="imagePreview" alt="Превью еды">
-
-    <div class="form-container" id="detailsForm">
-        <label>Что за блюдо?</label>
-        <input type="text" id="dishName" placeholder="Например: Плов с курицей">
-
-        <label>Вес порции (г)?</label>
-        <input type="text" id="weight" placeholder="Например: 300">
-
-        <label>Соусы / Масло?</label>
-        <input type="text" id="sauces" placeholder="Сметана, майонез...">
-
-        <label>Дополнительно (ложки, размер тарелки)</label>
-        <input type="text" id="extraInfo" placeholder="2 столовые ложки, глубокая миска">
-
-        <button class="submit-btn" onclick="sendData()">УЗНАТЬ КАЛОРИИ 🚀</button>
-    </div>
-
-    <div id="loader">Нейросеть изучает тарелку... 🔍</div>
+    <div id="loader">Нейросеть думает... 🔍</div>
     <div id="result"></div>
 
     <script>
@@ -162,73 +34,52 @@
         tg.expand();
 
         const fileInput = document.getElementById('fileInput');
-        const imagePreview = document.getElementById('imagePreview');
-        const detailsForm = document.getElementById('detailsForm');
-        const startWrapper = document.getElementById('startWrapper');
-
+        const preview = document.getElementById('preview');
+        const form = document.getElementById('form');
         let selectedFile = null;
 
-        // Показ превью и формы после фото
-        fileInput.addEventListener('change', function(event) {
-            const file = event.target.files[0];
+        fileInput.onchange = (e) => {
+            const file = e.target.files[0];
             if (file) {
                 selectedFile = file;
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    imagePreview.src = e.target.result;
-                    imagePreview.style.display = 'block';
-                    startWrapper.style.display = 'none';
-                    
-                    // Показываем форму с задержкой для анимации
-                    detailsForm.style.display = 'block';
-                    setTimeout(() => {
-                        detailsForm.classList.add('show');
-                    }, 50);
-                }
-                reader.readAsDataURL(file);
+                preview.src = URL.createObjectURL(file);
+                preview.style.display = 'block';
+                form.style.display = 'block';
             }
-        });
+        };
 
-        // Отправка данных на сервер Render
         async function sendData() {
-            if (!selectedFile) return;
+            const loader = document.getElementById('loader');
+            const resultDiv = document.getElementById('result');
+            
+            loader.style.display = 'block';
+            form.style.display = 'none';
+            resultDiv.style.display = 'none';
 
             const formData = new FormData();
             formData.append('photo', selectedFile);
             formData.append('dishName', document.getElementById('dishName').value);
             formData.append('weight', document.getElementById('weight').value);
-            formData.append('sauces', document.getElementById('sauces').value);
-            formData.append('extraInfo', document.getElementById('extraInfo').value);
-
-            detailsForm.classList.remove('show');
-            setTimeout(() => { detailsForm.style.display = 'none'; }, 500);
-            document.getElementById('loader').style.display = 'block';
 
             try {
-                // ВАЖНО: Вставь сюда свою ссылку от Render вместо этой заглушки:
-                const RENDER_URL = 'https://calories-1-pitp.onrender.com'; 
-                
-                const response = await fetch(`${RENDER_URL}/api/analyze`, {
+                // ТВОЙ РЕАЛЬНЫЙ СЕРВЕР НА RENDER
+                const response = await fetch('https://calories-1-pitp.onrender.com/api/analyze', {
                     method: 'POST',
                     body: formData
                 });
                 
                 const data = await response.json();
-                
-                document.getElementById('loader').style.display = 'none';
-                const resultDiv = document.getElementById('result');
+                loader.style.display = 'none';
                 resultDiv.style.display = 'block';
                 
                 if (data.success) {
-                    // Используем регулярку, чтобы заменить переносы строк на <br> для HTML
-                    const formattedResult = data.result.replace(/\n/g, '<br>');
-                    resultDiv.innerHTML = `<strong>АНАЛИЗ ГОТОВ:</strong><br><br>${formattedResult}`;
+                    resultDiv.innerHTML = `<b>РЕЗУЛЬТАТ:</b><br>${data.result.replace(/\n/g, '<br>')}`;
                 } else {
-                    resultDiv.innerHTML = `<strong>Ошибка:</strong><br>${data.error}`;
+                    resultDiv.innerText = "Ошибка: " + data.error;
                 }
             } catch (err) {
-                document.getElementById('loader').style.display = 'none';
-                alert("Ошибка соединения с сервером. Убедись, что Render запущен.");
+                loader.style.display = 'none';
+                alert("Нет связи с сервером. Попробуй еще раз через 10 секунд.");
             }
         }
     </script>
