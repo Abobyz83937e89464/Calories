@@ -1,11 +1,9 @@
 const express = require('express');
-const TelegramBot = require('node-telegram-bot-api');
 const multer = require('multer');
 const cors = require('cors');
 const axios = require('axios');
 
-// 🔐 ключи
-const TG_TOKEN = process.env.TG_TOKEN || '8404227234:AAEe634ABLyQ4o1NPtoZwiynXMhA2zPXMA0';
+// 🔐 ключ HF
 const HF_TOKEN = process.env.HF_TOKEN || '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';
 const WEB_APP_URL = 'https://calories-1-pitp.onrender.com/';
 
@@ -23,30 +21,16 @@ app.use(express.urlencoded({ extended: true }));
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// ❗ УБИРАЕМ ПРОБЛЕМУ С TELEGRAM 409
-const bot = new TelegramBot(TG_TOKEN, { polling: false });
-
-console.log("=== HF VISION SERVER START ===");
-
-bot.onText(/\/start/, (msg) => {
-    bot.sendMessage(msg.chat.id, '📸 Сканер готов! Открывай камеру.', {
-        reply_markup: {
-            inline_keyboard: [[{
-                text: 'Открыть камеру',
-                web_app: { url: WEB_APP_URL }
-            }]]
-        }
-    });
-});
+console.log("=== HF SERVER START ===");
 
 
-// 🧠 HF анализ (ПРАВИЛЬНЫЙ)
+// 🧠 РАБОЧИЙ HF АНАЛИЗ
 async function analyzeImage(buffer) {
     console.log(">>> HF анализ...");
 
     try {
         const res = await axios.post(
-            "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large",
+            "https://api-inference.huggingface.co/models/nlpconnect/vit-gpt2-image-captioning",
             buffer,
             {
                 headers: {
