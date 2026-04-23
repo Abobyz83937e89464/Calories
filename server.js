@@ -20,75 +20,75 @@ app.use(cors());
 app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage() });
 
+// Список моделей для перебора (от самой легкой к самой мощной)
+const VISION_MODELS = ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-1.5-pro"];
+
 // Анти-сон
 setInterval(() => {
     if (process.env.RENDER_EXTERNAL_URL) {
-        https.get(APP_URL, (res) => {
-            console.log(`Keep-alive ping: ${res.statusCode}`);
-        }).on('error', (e) => console.error('Ping error:', e.message));
+        https.get(APP_URL, (res) => {}).on('error', (e) => console.error('Ping error'));
     }
 }, 14 * 60 * 1000);
 
 bot.onText(/\/start/, (msg) => {
-    bot.sendMessage(msg.chat.id, 'Привет! Сканер готов к работе 🍏', {
+    bot.sendMessage(msg.chat.id, '📸 Сканер калорий готов!', {
         reply_markup: {
-            inline_keyboard: [[{ text: '📸 Считать калории', web_app: { url: GITHUB_WEB_APP_URL } }]]
+            inline_keyboard: [[{ text: 'Открыть камеру', web_app: { url: GITHUB_WEB_APP_URL } }]]
         }
     });
 });
 
 app.post('/api/analyze', upload.single('photo'), async (req, res) => {
-    console.log("--- ПОЛУЧЕН ЗАПРОС НА АНАЛИЗ ---");
+    console.log("--- НОВЫЙ ЗАПРОС ---");
     
-    try {
-        if (!req.file) {
-            console.error("Ошибка: Файл не найден в запросе (multer)");
-            return res.status(400).json({ success: false, error: 'Файл фото не дошел до сервера' });
+    if (!req.file) return res.status(400).json({ success: false, error: 'Нет файла' });
+
+    const { dishName, weight, sauces, extraInfo } = req.body;
+    const prompt = `Ты диетолог. Оцени еду на фото. Данные: ${dishName}, ${weight}г, соус: ${sauces}, доп: ${extraInfo}. Выдай КБЖУ и состав.`;
+    
+    const imagePart = {
+        inlineData: {
+            data: req.file.buffer.toString("base64"),
+            mimeType: req.file.mimetype || "image/jpeg"
         }
+    };
 
-        console.log(`Файл получен: ${req.file.originalname}, размер: ${req.file.size} байт`);
+    // Перебор моделей
+    let lastError = null;
+    for (const modelName of VISION_MODELS) {
+        try {
+            console.log(`Пробую модель: ${modelName}...`);
+            const model = genAI.getGenerativeModel({ model: modelName });
+            const result = await model.generateContent([prompt, imagePart]);
+            const response = await result.response;
+            const text = response.text();
 
-        const { dishName, weight, sauces, extraInfo } = req.body;
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-        const prompt = `Ты диетолог. Оцени еду на фото. Данные: ${dishName}, ${weight}г, соус: ${sauces}, доп: ${extraInfo}. Выдай КБЖУ и состав.`;
-
-        const imagePart = {
-            inlineData: {
-                data: req.file.buffer.toString("base64"),
-                mimeType: req.file.mimetype || "image/jpeg"
-            }
-        };
-
-        console.log("Отправка запроса в Google Gemini API...");
-        const result = await model.generateContent([prompt, imagePart]);
-        const response = await result.response;
-        const text = response.text();
-
-        console.log("--- УСПЕШНЫЙ ОТВЕТ ОТ GEMINI ---");
-        res.json({ success: true, result: text });
-
-    } catch (error) {
-        // ВОТ ТУТ МАГИЯ ЛОГИРОВАНИЯ
-        console.error("!!! ОШИБКА GEMINI API !!!");
-        console.error("Сообщение:", error.message);
-        
-        if (error.response) {
-            console.error("Данные ответа от Google:", JSON.stringify(error.response, null, 2));
+            console.log(`Успех с моделью ${modelName}!`);
+            return res.json({ success: true, result: text });
+        } catch (error) {
+            console.error(`Ошибка с ${modelName}:`, error.message);
+            lastError = error;
+            // Если ошибка связана с ключом или регионом, пробуем следующую
+            continue; 
         }
-
-        // Отправляем конкретную ошибку на фронтенд, чтобы ты видел её в боте
-        res.status(500).json({ 
-            success: false, 
-            error: `Ошибка: ${error.message.substring(0, 100)}...` 
-        });
     }
+
+    // Если ни одна модель не сработала
+    console.error("!!! ВСЕ МОДЕЛИ ОТКАЗАЛИ !!!");
+    console.error("Детальная ошибка:", lastError);
+
+    let finalMsg = lastError.message;
+    if (finalMsg.includes("location is not supported")) {
+        finalMsg = "Google блокирует доступ из региона, где находится сервер Render. Попробуй сменить регион сервера на US в настройках Render.";
+    }
+
+    res.status(500).json({ 
+        success: false, 
+        error: `Ошибка API: ${finalMsg}` 
+    });
 });
 
-app.get('/', (req, res) => res.send('Server is active!'));
+app.get('/', (req, res) => res.send('Server Running'));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Сервер запущен! Порт: ${PORT}`);
-    console.log(`Используемый ключ Gemini: ${GEMINI_API_KEY.substring(0, 5)}...`);
-});
+app.listen(PORT, () => console.log(`Server started on ${PORT}`));
