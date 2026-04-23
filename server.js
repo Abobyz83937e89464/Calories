@@ -10,10 +10,8 @@ const TELEGRAM_TOKEN = '8404227234:AAFMLGVkxz6Qf3J7m61KR8BNni4kDP1B9t8';
 const GEMINI_API_KEY = 'AIzaSyBsIAOJDcCzclqDMjUwtpKeLWePjRYa6gc';
 const GITHUB_WEB_APP_URL = 'https://abobyz83937e89464.github.io/Calories/';
 
-// Авто-определение своего URL для пинга на Render
 const APP_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
 
-// Инициализация AI и Бота
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 const app = express();
@@ -22,73 +20,75 @@ app.use(cors());
 app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage() });
 
-// === СИСТЕМА АНТИ-СОН (КАЖДЫЕ 14 МИНУТ) ===
+// Анти-сон
 setInterval(() => {
     if (process.env.RENDER_EXTERNAL_URL) {
         https.get(APP_URL, (res) => {
-            console.log(`Self-ping: ${res.statusCode} - Keep alive`);
+            console.log(`Keep-alive ping: ${res.statusCode}`);
         }).on('error', (e) => console.error('Ping error:', e.message));
     }
 }, 14 * 60 * 1000);
 
-// === ЛОГИКА ТЕЛЕГРАМ БОТА ===
 bot.onText(/\/start/, (msg) => {
-    bot.sendMessage(msg.chat.id, 'Привет! Нажми кнопку ниже, чтобы открыть сканер калорий 🍏', {
+    bot.sendMessage(msg.chat.id, 'Привет! Сканер готов к работе 🍏', {
         reply_markup: {
-            inline_keyboard: [[
-                { text: '📸 Считать калории', web_app: { url: GITHUB_WEB_APP_URL } }
-            ]]
+            inline_keyboard: [[{ text: '📸 Считать калории', web_app: { url: GITHUB_WEB_APP_URL } }]]
         }
     });
 });
 
-// === API ДЛЯ АНАЛИЗА ФОТО ЧЕРЕЗ GEMINI 1.5 FLASH ===
 app.post('/api/analyze', upload.single('photo'), async (req, res) => {
+    console.log("--- ПОЛУЧЕН ЗАПРОС НА АНАЛИЗ ---");
+    
     try {
-        if (!req.file) return res.status(400).json({ success: false, error: 'Нет фото' });
+        if (!req.file) {
+            console.error("Ошибка: Файл не найден в запросе (multer)");
+            return res.status(400).json({ success: false, error: 'Файл фото не дошел до сервера' });
+        }
+
+        console.log(`Файл получен: ${req.file.originalname}, размер: ${req.file.size} байт`);
 
         const { dishName, weight, sauces, extraInfo } = req.body;
-        
-        // Выбираем модель Gemini 1.5 Flash
         const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
-        const prompt = `
-        Ты - крутой диетолог-нутрициолог. Твоя задача: проанализировать еду на фото.
-        Общайся дружелюбно, каждый раз меняй стиль ответа (используй разные фразы, шутки или факты).
-        
-        Данные от пользователя:
-        - Что это: ${dishName || 'Не указано'}
-        - Вес: ${weight || 'Неизвестен'}
-        - Соусы: ${sauces || 'Нет'}
-        - Доп. инфо: ${extraInfo || 'Нет'}
+        const prompt = `Ты диетолог. Оцени еду на фото. Данные: ${dishName}, ${weight}г, соус: ${sauces}, доп: ${extraInfo}. Выдай КБЖУ и состав.`;
 
-        Выдай ответ строго по пунктам:
-        1. КБЖУ (Ккал, Белки, Жиры, Углеводы) — оцени максимально точно.
-        2. Из чего состоит блюдо (список ингредиентов, которые видишь).
-        3. Маленький совет по этому приему пищи.
-        `;
-
-        // Превращаем буфер фото в формат, который понимает Gemini
         const imagePart = {
             inlineData: {
                 data: req.file.buffer.toString("base64"),
-                mimeType: req.file.mimetype
+                mimeType: req.file.mimetype || "image/jpeg"
             }
         };
 
+        console.log("Отправка запроса в Google Gemini API...");
         const result = await model.generateContent([prompt, imagePart]);
         const response = await result.response;
         const text = response.text();
 
+        console.log("--- УСПЕШНЫЙ ОТВЕТ ОТ GEMINI ---");
         res.json({ success: true, result: text });
 
     } catch (error) {
-        console.error("Gemini Error:", error);
-        res.status(500).json({ success: false, error: 'Ошибка нейросети. Попробуй еще раз.' });
+        // ВОТ ТУТ МАГИЯ ЛОГИРОВАНИЯ
+        console.error("!!! ОШИБКА GEMINI API !!!");
+        console.error("Сообщение:", error.message);
+        
+        if (error.response) {
+            console.error("Данные ответа от Google:", JSON.stringify(error.response, null, 2));
+        }
+
+        // Отправляем конкретную ошибку на фронтенд, чтобы ты видел её в боте
+        res.status(500).json({ 
+            success: false, 
+            error: `Ошибка: ${error.message.substring(0, 100)}...` 
+        });
     }
 });
 
 app.get('/', (req, res) => res.send('Server is active!'));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
+app.listen(PORT, () => {
+    console.log(`Сервер запущен! Порт: ${PORT}`);
+    console.log(`Используемый ключ Gemini: ${GEMINI_API_KEY.substring(0, 5)}...`);
+});
