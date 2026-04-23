@@ -16,7 +16,7 @@ app.use(cors());
 app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage() });
 
-console.log("=== ИНИЦИАЛИЗАЦИЯ OPENROUTER СЕРВЕРА ===");
+console.log("=== DEBUG OPENROUTER SERVER ===");
 
 bot.onText(/\/start/, (msg) => {
     bot.sendMessage(msg.chat.id, '📸 Сканер готов! Открывай камеру.', {
@@ -30,15 +30,17 @@ bot.onText(/\/start/, (msg) => {
 });
 
 
-// 🔥 модели (начинаем с Nemotron)
+// 🔥 МОДЕЛИ (несколько сразу)
 const MODELS = [
-    "nvidia/nemotron-nano-12b-vl:free"
+    "nvidia/nemotron-nano-12b-vl:free",
+    "qwen/qwen2.5-vl-7b-instruct:free",
+    "meta-llama/llama-3.2-11b-vision-instruct:free"
 ];
 
 async function tryModels(prompt, base64, mime) {
     for (const model of MODELS) {
         try {
-            console.log(`>>> Пробуем модель: ${model}`);
+            console.log(`\n>>> Пробуем модель: ${model}`);
 
             const res = await axios.post(
                 "https://openrouter.ai/api/v1/chat/completions",
@@ -67,35 +69,43 @@ async function tryModels(prompt, base64, mime) {
                 }
             );
 
-            const text = res.data.choices[0].message.content;
-
-            console.log(`✅ Используется модель: ${model}`);
+            console.log(`✅ УСПЕХ: ${model}`);
 
             return {
                 modelUsed: model,
-                text
+                text: res.data.choices[0].message.content
             };
 
         } catch (err) {
-            console.log(`❌ ${model} ошибка:`, err.response?.data || err.message);
+            console.log(`❌ ОШИБКА МОДЕЛИ: ${model}`);
+
+            if (err.response) {
+                console.log("STATUS:", err.response.status);
+                console.log("DATA:", JSON.stringify(err.response.data, null, 2));
+            } else {
+                console.log("ERROR:", err.message);
+            }
         }
     }
 
-    throw new Error("Нет доступных моделей");
+    throw new Error("Все модели отвалились (смотри логи)");
 }
 
 
 // 📸 API
 app.post('/api/analyze', upload.single('photo'), async (req, res) => {
-    console.log(">>> [1] Получен запрос");
+    console.log("\n=== НОВЫЙ ЗАПРОС ===");
 
     try {
         if (!req.file) {
+            console.error("!!! Нет файла");
             return res.status(400).json({
                 success: false,
                 error: 'Фото не дошло до сервера'
             });
         }
+
+        console.log(`>>> Фото: ${req.file.size} байт, ${req.file.mimetype}`);
 
         const base64 = req.file.buffer.toString('base64');
         const mime = req.file.mimetype;
@@ -136,13 +146,13 @@ app.post('/api/analyze', upload.single('photo'), async (req, res) => {
 });
 
 
-// ❤️ ПИНГ КАЖДЫЕ 14 МИНУТ (чтобы Render не засыпал)
+// ❤️ ПИНГ (14 минут)
 setInterval(async () => {
     try {
         await axios.get("https://calories-1-pitp.onrender.com/");
-        console.log("🔄 Пинг отправлен");
-    } catch (err) {
-        console.log("❌ Пинг не прошёл");
+        console.log("🔄 Пинг ок");
+    } catch {
+        console.log("❌ Пинг ошибка");
     }
 }, 14 * 60 * 1000);
 
@@ -152,5 +162,5 @@ app.get('/', (req, res) => res.send('Server alive 🚀'));
 const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`=== СЕРВЕР ЗАПУЩЕН НА ${PORT} ===`);
+    console.log(`=== SERVER STARTED ${PORT} ===`);
 });
