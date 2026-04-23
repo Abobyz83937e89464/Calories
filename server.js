@@ -5,18 +5,22 @@ const cors = require('cors');
 const axios = require('axios');
 
 // 🔐 ключи
-const TG_TOKEN = process.env.TG_TOKEN || '8404227234:AAFJYdZ20nKar8_UbChC-4MghkEjWKQCmys';
+const TG_TOKEN = process.env.TG_TOKEN || '8404227234:AAHNfv3XZji2E8r6EdOquy7SJ3ajPUuI-Ww';
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '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';
-const WEB_APP_URL = 'https://abobyz83937e89464.github.io/Calories/';
+const WEB_APP_URL = 'https://calories-1-pitp.onrender.com/';
 
 const app = express();
-const bot = new TelegramBot(TG_TOKEN, { polling: true });
+
+// 🔥 фикс Telegram 409
+const bot = new TelegramBot(TG_TOKEN);
+bot.deleteWebHook();
+bot.startPolling();
 
 app.use(cors());
 app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage() });
 
-console.log("=== DEBUG OPENROUTER SERVER ===");
+console.log("=== OPENROUTER VISION SERVER ===");
 
 bot.onText(/\/start/, (msg) => {
     bot.sendMessage(msg.chat.id, '📸 Сканер готов! Открывай камеру.', {
@@ -30,65 +34,42 @@ bot.onText(/\/start/, (msg) => {
 });
 
 
-// 🔥 МОДЕЛИ (несколько сразу)
-const MODELS = [
-    "nvidia/nemotron-nano-12b-vl:free",
-    "qwen/qwen2.5-vl-7b-instruct:free",
-    "meta-llama/llama-3.2-11b-vision-instruct:free"
-];
+// 🔥 ТВОЯ РАБОЧАЯ МОДЕЛЬ
+const MODEL = "nvidia/nemotron-nano-12b-v2-vl:free";
 
-async function tryModels(prompt, base64, mime) {
-    for (const model of MODELS) {
-        try {
-            console.log(`\n>>> Пробуем модель: ${model}`);
+async function analyzeWithVision(prompt, base64, mime) {
+    console.log(`>>> Используем модель: ${MODEL}`);
 
-            const res = await axios.post(
-                "https://openrouter.ai/api/v1/chat/completions",
+    const res = await axios.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+            model: MODEL,
+            messages: [
                 {
-                    model,
-                    messages: [
+                    role: "user",
+                    content: [
+                        { type: "text", text: prompt },
                         {
-                            role: "user",
-                            content: [
-                                { type: "text", text: prompt },
-                                {
-                                    type: "image_url",
-                                    image_url: {
-                                        url: `data:${mime};base64,${base64}`
-                                    }
-                                }
-                            ]
+                            type: "image_url",
+                            image_url: {
+                                url: `data:${mime};base64,${base64}`
+                            }
                         }
                     ]
-                },
-                {
-                    headers: {
-                        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-                        "Content-Type": "application/json"
-                    }
                 }
-            );
-
-            console.log(`✅ УСПЕХ: ${model}`);
-
-            return {
-                modelUsed: model,
-                text: res.data.choices[0].message.content
-            };
-
-        } catch (err) {
-            console.log(`❌ ОШИБКА МОДЕЛИ: ${model}`);
-
-            if (err.response) {
-                console.log("STATUS:", err.response.status);
-                console.log("DATA:", JSON.stringify(err.response.data, null, 2));
-            } else {
-                console.log("ERROR:", err.message);
+            ]
+        },
+        {
+            headers: {
+                "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+                "HTTP-Referer": WEB_APP_URL,
+                "X-Title": "calorie-app",
+                "Content-Type": "application/json"
             }
         }
-    }
+    );
 
-    throw new Error("Все модели отвалились (смотри логи)");
+    return res.data.choices[0].message.content;
 }
 
 
@@ -98,44 +79,36 @@ app.post('/api/analyze', upload.single('photo'), async (req, res) => {
 
     try {
         if (!req.file) {
-            console.error("!!! Нет файла");
             return res.status(400).json({
                 success: false,
                 error: 'Фото не дошло до сервера'
             });
         }
 
-        console.log(`>>> Фото: ${req.file.size} байт, ${req.file.mimetype}`);
+        console.log(`>>> Фото: ${req.file.size} байт`);
 
         const base64 = req.file.buffer.toString('base64');
         const mime = req.file.mimetype;
 
         const { dishName, weight } = req.body;
 
-        const prompt = `Ты диетолог. Оцени еду.
+        const prompt = `Ты диетолог. Оцени еду на фото.
 
 Название: ${dishName || 'неизвестно'}
 Вес: ${weight || 'неизвестен'}
 
-Ответ:
+Выдай КБЖУ и краткий состав на русском языке.`;
 
-Название:
-Калории:
-Белки:
-Жиры:
-Углеводы:
-Описание:`;
-
-        const result = await tryModels(prompt, base64, mime);
+        const resultText = await analyzeWithVision(prompt, base64, mime);
 
         res.json({
             success: true,
-            result: result.text,
-            model: result.modelUsed
+            result: resultText,
+            model: MODEL
         });
 
     } catch (error) {
-        console.error("!!! КРИТИЧЕСКАЯ ОШИБКА:", error);
+        console.error("!!! ОШИБКА:", error.response?.data || error.message);
 
         res.status(500).json({
             success: false,
@@ -146,10 +119,10 @@ app.post('/api/analyze', upload.single('photo'), async (req, res) => {
 });
 
 
-// ❤️ ПИНГ (14 минут)
+// ❤️ пинг каждые 14 минут
 setInterval(async () => {
     try {
-        await axios.get("https://calories-1-pitp.onrender.com/");
+        await axios.get(WEB_APP_URL);
         console.log("🔄 Пинг ок");
     } catch {
         console.log("❌ Пинг ошибка");
