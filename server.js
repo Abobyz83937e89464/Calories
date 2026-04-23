@@ -5,8 +5,8 @@ const cors = require('cors');
 const axios = require('axios');
 
 // 🔐 ключи
-const TG_TOKEN = process.env.TG_TOKEN || '8404227234:AAHNfv3XZji2E8r6EdOquy7SJ3ajPUuI-Ww';
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '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';
+const TG_TOKEN = process.env.TG_TOKEN || '8404227234:AAH_f7x5t_vP6-k_KNx3oQVY07jDZ2MNV2Y';
+const HF_TOKEN = process.env.HF_TOKEN || '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';
 const WEB_APP_URL = 'https://calories-1-pitp.onrender.com/';
 
 const app = express();
@@ -20,7 +20,7 @@ app.use(cors());
 app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage() });
 
-console.log("=== OPENROUTER VISION SERVER ===");
+console.log("=== HF VISION SERVER START ===");
 
 bot.onText(/\/start/, (msg) => {
     bot.sendMessage(msg.chat.id, '📸 Сканер готов! Открывай камеру.', {
@@ -34,42 +34,23 @@ bot.onText(/\/start/, (msg) => {
 });
 
 
-// 🔥 ТВОЯ РАБОЧАЯ МОДЕЛЬ
-const MODEL = "nvidia/nemotron-nano-12b-v2-vl:free";
-
-async function analyzeWithVision(prompt, base64, mime) {
-    console.log(`>>> Используем модель: ${MODEL}`);
+// 🧠 HF анализ картинки
+async function analyzeImage(buffer) {
+    console.log(">>> HF анализ...");
 
     const res = await axios.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        {
-            model: MODEL,
-            messages: [
-                {
-                    role: "user",
-                    content: [
-                        { type: "text", text: prompt },
-                        {
-                            type: "image_url",
-                            image_url: {
-                                url: `data:${mime};base64,${base64}`
-                            }
-                        }
-                    ]
-                }
-            ]
-        },
+        "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large",
+        buffer,
         {
             headers: {
-                "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
-                "HTTP-Referer": WEB_APP_URL,
-                "X-Title": "calorie-app",
-                "Content-Type": "application/json"
-            }
+                Authorization: `Bearer ${HF_TOKEN}`,
+                "Content-Type": "application/octet-stream"
+            },
+            timeout: 60000
         }
     );
 
-    return res.data.choices[0].message.content;
+    return res.data[0].generated_text;
 }
 
 
@@ -87,24 +68,29 @@ app.post('/api/analyze', upload.single('photo'), async (req, res) => {
 
         console.log(`>>> Фото: ${req.file.size} байт`);
 
-        const base64 = req.file.buffer.toString('base64');
-        const mime = req.file.mimetype;
+        const description = await analyzeImage(req.file.buffer);
 
-        const { dishName, weight } = req.body;
+        console.log(">>> Описание:", description);
 
-        const prompt = `Ты диетолог. Оцени еду на фото.
+        // 🔥 простой расчет (чтобы не городить второй AI)
+        const weight = req.body.weight || 150;
 
-Название: ${dishName || 'неизвестно'}
-Вес: ${weight || 'неизвестен'}
+        const result = `
+📊 АНАЛИЗ
 
-Выдай КБЖУ и краткий состав на русском языке.`;
+🍽 Блюдо: ${description}
 
-        const resultText = await analyzeWithVision(prompt, base64, mime);
+⚖️ Вес: ${weight} г
+
+🔥 Калории: ~${Math.round(weight * 2)} ккал
+🥩 Белки: ~${Math.round(weight * 0.1)} г
+🧈 Жиры: ~${Math.round(weight * 0.08)} г
+🍞 Углеводы: ~${Math.round(weight * 0.2)} г
+`;
 
         res.json({
             success: true,
-            result: resultText,
-            model: MODEL
+            result
         });
 
     } catch (error) {
@@ -112,7 +98,7 @@ app.post('/api/analyze', upload.single('photo'), async (req, res) => {
 
         res.status(500).json({
             success: false,
-            error: error.message,
+            error: error.response?.data?.error || error.message,
             stack: error.stack
         });
     }
