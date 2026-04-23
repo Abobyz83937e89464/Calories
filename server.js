@@ -2,23 +2,21 @@ const express = require('express');
 const TelegramBot = require('node-telegram-bot-api');
 const multer = require('multer');
 const cors = require('cors');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+const axios = require('axios');
 
 // 🔐 ключи
-const TG_TOKEN = process.env.TG_TOKEN || '8404227234:AAEspH56VB5-zKWUW68twg1qMwcEedmCmwI';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyBsIAOJDcCzclqDMjUwtpKeLWePjRYa6gc';
+const TG_TOKEN = process.env.TG_TOKEN || '8404227234:AAFJYdZ20nKar8_UbChC-4MghkEjWKQCmys';
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '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';
 const WEB_APP_URL = 'https://abobyz83937e89464.github.io/Calories/';
 
 const app = express();
 const bot = new TelegramBot(TG_TOKEN, { polling: true });
 
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-
 app.use(cors());
 app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage() });
 
-console.log("=== ИНИЦИАЛИЗАЦИЯ СЕРВЕРА (GEMINI) ===");
+console.log("=== ИНИЦИАЛИЗАЦИЯ OPENROUTER СЕРВЕРА ===");
 
 bot.onText(/\/start/, (msg) => {
     bot.sendMessage(msg.chat.id, '📸 Сканер готов! Открывай камеру.', {
@@ -32,79 +30,93 @@ bot.onText(/\/start/, (msg) => {
 });
 
 
-// 🔥 модели (по приоритету)
+// 🔥 модели (начинаем с Nemotron)
 const MODELS = [
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-8b",
-    "gemini-1.5-pro"
+    "nvidia/nemotron-nano-12b-vl:free"
 ];
 
-async function tryModels(prompt, imagePart) {
-    for (const modelName of MODELS) {
+async function tryModels(prompt, base64, mime) {
+    for (const model of MODELS) {
         try {
-            console.log(`>>> Пробуем модель: ${modelName}`);
+            console.log(`>>> Пробуем модель: ${model}`);
 
-            const model = genAI.getGenerativeModel({ model: modelName });
+            const res = await axios.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                {
+                    model,
+                    messages: [
+                        {
+                            role: "user",
+                            content: [
+                                { type: "text", text: prompt },
+                                {
+                                    type: "image_url",
+                                    image_url: {
+                                        url: `data:${mime};base64,${base64}`
+                                    }
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    headers: {
+                        "Authorization": `Bearer ${OPENROUTER_API_KEY}`,
+                        "Content-Type": "application/json"
+                    }
+                }
+            );
 
-            const result = await model.generateContent([
-                prompt,
-                imagePart
-            ]);
+            const text = res.data.choices[0].message.content;
 
-            const text = result.response.text();
-
-            console.log(`✅ Используется модель: ${modelName}`);
+            console.log(`✅ Используется модель: ${model}`);
 
             return {
-                modelUsed: modelName,
+                modelUsed: model,
                 text
             };
 
         } catch (err) {
-            console.log(`❌ ${modelName} не работает: ${err.message}`);
+            console.log(`❌ ${model} ошибка:`, err.response?.data || err.message);
         }
     }
 
-    throw new Error("Нет доступных Gemini vision моделей");
+    throw new Error("Нет доступных моделей");
 }
 
 
-// 📸 API (твоя логика ошибок НЕ ТРОНУТА)
+// 📸 API
 app.post('/api/analyze', upload.single('photo'), async (req, res) => {
-    console.log(">>> [1] Получен запрос на /api/analyze");
+    console.log(">>> [1] Получен запрос");
 
     try {
         if (!req.file) {
-            console.error("!!! Ошибка: Файл не найден");
-            return res.status(400).json({ success: false, error: 'Фото не дошло до сервера' });
+            return res.status(400).json({
+                success: false,
+                error: 'Фото не дошло до сервера'
+            });
         }
 
-        console.log(`>>> [2] Фото получено: ${req.file.size} байт`);
-
-        const base64Image = req.file.buffer.toString('base64');
-        const mimeType = req.file.mimetype;
+        const base64 = req.file.buffer.toString('base64');
+        const mime = req.file.mimetype;
 
         const { dishName, weight } = req.body;
 
-        const prompt = `Ты диетолог. Оцени еду на фото.
+        const prompt = `Ты диетолог. Оцени еду.
 
 Название: ${dishName || 'неизвестно'}
 Вес: ${weight || 'неизвестен'}
 
-Выдай КБЖУ и краткий состав на русском языке.`;
+Ответ:
 
-        const imagePart = {
-            inlineData: {
-                data: base64Image,
-                mimeType: mimeType
-            }
-        };
+Название:
+Калории:
+Белки:
+Жиры:
+Углеводы:
+Описание:`;
 
-        console.log(">>> [3] Отправка в Gemini...");
-
-        const result = await tryModels(prompt, imagePart);
-
-        console.log(">>> [4] Ответ получен");
+        const result = await tryModels(prompt, base64, mime);
 
         res.json({
             success: true,
@@ -113,7 +125,7 @@ app.post('/api/analyze', upload.single('photo'), async (req, res) => {
         });
 
     } catch (error) {
-        console.error("!!! [КРИТИЧЕСКАЯ ОШИБКА]:", error);
+        console.error("!!! КРИТИЧЕСКАЯ ОШИБКА:", error);
 
         res.status(500).json({
             success: false,
@@ -123,7 +135,19 @@ app.post('/api/analyze', upload.single('photo'), async (req, res) => {
     }
 });
 
-app.get('/', (req, res) => res.send('Server is alive! Gemini Mode'));
+
+// ❤️ ПИНГ КАЖДЫЕ 14 МИНУТ (чтобы Render не засыпал)
+setInterval(async () => {
+    try {
+        await axios.get("https://calories-1-pitp.onrender.com/");
+        console.log("🔄 Пинг отправлен");
+    } catch (err) {
+        console.log("❌ Пинг не прошёл");
+    }
+}, 14 * 60 * 1000);
+
+
+app.get('/', (req, res) => res.send('Server alive 🚀'));
 
 const PORT = process.env.PORT || 10000;
 
