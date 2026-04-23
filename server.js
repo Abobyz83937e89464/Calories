@@ -3,17 +3,10 @@ const multer = require('multer');
 const cors = require('cors');
 const axios = require('axios');
 
-// 🔐 ключ HF
-const HF_TOKEN = process.env.HF_TOKEN || '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';
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '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';
 const WEB_APP_URL = 'https://calories-1-pitp.onrender.com/';
 
 const app = express();
-
-// 🔥 лог всех запросов
-app.use((req, res, next) => {
-    console.log(">>> REQUEST:", req.method, req.url);
-    next();
-});
 
 app.use(cors());
 app.use(express.json());
@@ -21,38 +14,44 @@ app.use(express.urlencoded({ extended: true }));
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-console.log("=== HF SERVER START ===");
+console.log("=== OPENROUTER VISION SERVER ===");
 
 
-// 🧠 РАБОЧИЙ HF АНАЛИЗ
-async function analyzeImage(buffer) {
-    console.log(">>> HF анализ...");
+// 🧠 Vision через OpenRouter (СТАБИЛЬНО)
+async function analyzeImage(base64, mime) {
+    console.log(">>> OpenRouter анализ...");
 
-    try {
-        const res = await axios.post(
-            "https://api-inference.huggingface.co/models/nlpconnect/vit-gpt2-image-captioning",
-            buffer,
-            {
-                headers: {
-                    Authorization: `Bearer ${HF_TOKEN}`,
-                    "Content-Type": "application/octet-stream"
-                },
-                timeout: 60000
+    const res = await axios.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+            model: "nvidia/nemotron-nano-12b-v2-vl:free",
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        {
+                            type: "text",
+                            text: "Опиши еду на фото и оцени КБЖУ"
+                        },
+                        {
+                            type: "image_url",
+                            image_url: {
+                                url: `data:${mime};base64,${base64}`
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            headers: {
+                Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+                "Content-Type": "application/json"
             }
-        );
-
-        console.log("HF RESPONSE:", res.data);
-
-        if (!Array.isArray(res.data)) {
-            throw new Error("HF вернул не массив");
         }
+    );
 
-        return res.data[0]?.generated_text || "Не удалось распознать";
-
-    } catch (err) {
-        console.error("HF ERROR:", err.response?.data || err.message);
-        throw new Error("Ошибка HuggingFace");
-    }
+    return res.data.choices[0].message.content;
 }
 
 
@@ -68,34 +67,18 @@ app.post('/api/analyze', upload.single('photo'), async (req, res) => {
             });
         }
 
-        console.log(`>>> Фото: ${req.file.size} байт`);
+        const base64 = req.file.buffer.toString('base64');
+        const mime = req.file.mimetype;
 
-        const description = await analyzeImage(req.file.buffer);
-
-        console.log(">>> Описание:", description);
-
-        const weight = req.body.weight || 150;
-
-        const result = `
-📊 АНАЛИЗ
-
-🍽 Блюдо: ${description}
-
-⚖️ Вес: ${weight} г
-
-🔥 Калории: ~${Math.round(weight * 2)} ккал
-🥩 Белки: ~${Math.round(weight * 0.1)} г
-🧈 Жиры: ~${Math.round(weight * 0.08)} г
-🍞 Углеводы: ~${Math.round(weight * 0.2)} г
-`;
+        const resultText = await analyzeImage(base64, mime);
 
         res.json({
             success: true,
-            result
+            result: resultText
         });
 
     } catch (error) {
-        console.error("!!! SERVER ERROR:", error.message);
+        console.error("!!! ERROR:", error.response?.data || error.message);
 
         res.status(500).json({
             success: false,
@@ -105,24 +88,7 @@ app.post('/api/analyze', upload.single('photo'), async (req, res) => {
 });
 
 
-// тест
-app.get('/test', (req, res) => {
-    res.send('TEST OK');
-});
-
 app.get('/', (req, res) => res.send('Server alive 🚀'));
-
-
-// ❤️ пинг
-setInterval(async () => {
-    try {
-        await axios.get(WEB_APP_URL);
-        console.log("🔄 Пинг ок");
-    } catch {
-        console.log("❌ Пинг ошибка");
-    }
-}, 14 * 60 * 1000);
-
 
 const PORT = process.env.PORT || 10000;
 
