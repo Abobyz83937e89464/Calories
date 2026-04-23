@@ -9,59 +9,70 @@
         :root {
             --bg-color: #121212;
             --text-color: #ffffff;
-            --accent: #ff9800; /* Сочный оранжевый */
+            --accent: #ff9800;
             --input-bg: #1e1e1e;
+            --success: #4CAF50;
         }
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             background-color: var(--bg-color);
             color: var(--text-color);
             margin: 0;
             padding: 20px;
-            text-align: center;
-            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
         }
-        h2 { margin-top: 0; }
+        h2 { margin-bottom: 10px; font-weight: 600; }
+        p { color: #aaa; font-size: 14px; margin-bottom: 30px; }
         
-        /* Кнопка камеры */
-        .camera-btn-wrapper { margin-top: 50px; }
+        /* Кнопка запуска камеры */
+        .camera-btn-wrapper { width: 100%; max-width: 300px; }
         .camera-btn {
+            display: block;
             background-color: var(--accent);
             color: #000;
-            padding: 15px 30px;
+            padding: 20px;
             font-size: 18px;
             font-weight: bold;
             border: none;
-            border-radius: 25px;
+            border-radius: 20px;
             cursor: pointer;
-            box-shadow: 0 4px 15px rgba(255, 152, 0, 0.4);
-            transition: transform 0.2s;
+            box-shadow: 0 10px 20px rgba(255, 152, 0, 0.3);
+            transition: all 0.3s ease;
+            text-align: center;
         }
-        .camera-btn:active { transform: scale(0.95); }
-        
-        /* Скрытый инпут для камеры */
+        .camera-btn:active { transform: scale(0.95); box-shadow: 0 5px 10px rgba(255, 152, 0, 0.2); }
         input[type="file"] { display: none; }
 
-        /* Превью картинки */
+        /* Превью изображения */
         #imagePreview {
-            max-width: 100%;
-            border-radius: 15px;
+            width: 100%;
+            max-width: 300px;
+            border-radius: 20px;
             margin-top: 20px;
             display: none;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            object-fit: cover;
+            border: 2px solid var(--accent);
         }
 
-        /* Анимированная форма (спрятана по умолчанию) */
+        /* Контейнер формы с анимацией */
         .form-container {
             display: none;
-            opacity: 0;
-            transform: translateY(30px);
-            transition: all 0.5s ease;
-            background: #1e1e1e;
-            padding: 20px;
-            border-radius: 15px;
+            width: 100%;
+            max-width: 350px;
+            background: var(--input-bg);
+            padding: 25px;
+            border-radius: 25px;
             margin-top: 20px;
             text-align: left;
+            box-sizing: border-box;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.5);
+            /* Анимация появления */
+            opacity: 0;
+            transform: translateY(40px);
+            transition: opacity 0.5s ease, transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
         .form-container.show {
             display: block;
@@ -69,52 +80,58 @@
             transform: translateY(0);
         }
 
+        label { display: block; margin-bottom: 5px; font-size: 14px; color: var(--accent); font-weight: 500; }
         input[type="text"] {
             width: 100%;
-            padding: 12px;
-            margin: 8px 0 15px;
+            padding: 14px;
+            margin-bottom: 15px;
             border: 1px solid #333;
-            border-radius: 10px;
-            background: #2c2c2c;
+            border-radius: 12px;
+            background: #252525;
             color: white;
             box-sizing: border-box;
+            font-size: 16px;
         }
         
         .submit-btn {
-            background: #4CAF50;
+            background: var(--success);
             color: white;
             width: 100%;
-            padding: 15px;
+            padding: 16px;
             border: none;
-            border-radius: 10px;
-            font-size: 16px;
+            border-radius: 15px;
+            font-size: 18px;
             font-weight: bold;
             margin-top: 10px;
+            cursor: pointer;
+            transition: background 0.3s;
         }
+        .submit-btn:active { opacity: 0.8; }
 
-        /* Анимация загрузки */
-        #loader { display: none; margin-top: 20px; color: var(--accent); font-weight: bold; }
-        
-        /* Результат */
+        /* Статусы */
+        #loader { display: none; margin-top: 30px; font-weight: bold; color: var(--accent); }
         #result {
             margin-top: 20px;
-            padding: 15px;
-            background: #2a2a2a;
-            border-radius: 10px;
+            padding: 20px;
+            background: #1e1e1e;
+            border-radius: 20px;
             text-align: left;
             display: none;
-            white-space: pre-wrap; /* чтобы переносы строк из ИИ сохранялись */
+            width: 100%;
+            max-width: 350px;
+            line-height: 1.5;
+            border-left: 4px solid var(--accent);
         }
     </style>
 </head>
 <body>
 
     <h2>Умный счетчик 🍏</h2>
-    <p>Сфоткай еду, и нейросеть всё посчитает.</p>
+    <p>Анализ рациона по фото за секунды</p>
 
     <div class="camera-btn-wrapper" id="startWrapper">
         <label class="camera-btn">
-            📸 Включить камеру
+            📸 СФОТКАТЬ ЕДУ
             <input type="file" accept="image/*" capture="environment" id="fileInput">
         </label>
     </div>
@@ -122,29 +139,27 @@
     <img id="imagePreview" alt="Превью еды">
 
     <div class="form-container" id="detailsForm">
-        <h3>Уточни детали (необязательно)</h3>
-        
         <label>Что за блюдо?</label>
-        <input type="text" id="dishName" placeholder="Например: Борщ, Овсянка">
+        <input type="text" id="dishName" placeholder="Например: Плов с курицей">
 
-        <label>Примерный вес (г)?</label>
-        <input type="text" id="weight" placeholder="Например: 250">
+        <label>Вес порции (г)?</label>
+        <input type="text" id="weight" placeholder="Например: 300">
 
-        <label>Добавили соусы/масло?</label>
-        <input type="text" id="sauces" placeholder="Майонез, кетчуп, оливковое">
+        <label>Соусы / Масло?</label>
+        <input type="text" id="sauces" placeholder="Сметана, майонез...">
 
-        <label>Дополнительно (размер тарелки, ложки)</label>
-        <input type="text" id="extraInfo" placeholder="Большая тарелка, 3 столовые ложки">
+        <label>Дополнительно (ложки, размер тарелки)</label>
+        <input type="text" id="extraInfo" placeholder="2 столовые ложки, глубокая миска">
 
-        <button class="submit-btn" onclick="sendData()">Отправить на анализ 🚀</button>
+        <button class="submit-btn" onclick="sendData()">УЗНАТЬ КАЛОРИИ 🚀</button>
     </div>
 
-    <div id="loader">Нейросеть думает... ⏳</div>
+    <div id="loader">Нейросеть изучает тарелку... 🔍</div>
     <div id="result"></div>
 
     <script>
         const tg = window.Telegram.WebApp;
-        tg.expand(); // Открываем на весь экран
+        tg.expand();
 
         const fileInput = document.getElementById('fileInput');
         const imagePreview = document.getElementById('imagePreview');
@@ -153,7 +168,7 @@
 
         let selectedFile = null;
 
-        // Когда фотка сделана/выбрана
+        // Показ превью и формы после фото
         fileInput.addEventListener('change', function(event) {
             const file = event.target.files[0];
             if (file) {
@@ -162,21 +177,21 @@
                 reader.onload = function(e) {
                     imagePreview.src = e.target.result;
                     imagePreview.style.display = 'block';
-                    
-                    // Прячем кнопку камеры, показываем форму с анимацией
                     startWrapper.style.display = 'none';
-                    // Небольшая задержка для красивой анимации выезда
+                    
+                    // Показываем форму с задержкой для анимации
+                    detailsForm.style.display = 'block';
                     setTimeout(() => {
                         detailsForm.classList.add('show');
-                    }, 100);
+                    }, 50);
                 }
                 reader.readAsDataURL(file);
             }
         });
 
-        // Отправка на сервер
+        // Отправка данных на сервер Render
         async function sendData() {
-            if (!selectedFile) return alert("Сначала сделай фото!");
+            if (!selectedFile) return;
 
             const formData = new FormData();
             formData.append('photo', selectedFile);
@@ -185,12 +200,15 @@
             formData.append('sauces', document.getElementById('sauces').value);
             formData.append('extraInfo', document.getElementById('extraInfo').value);
 
-            detailsForm.style.display = 'none';
+            detailsForm.classList.remove('show');
+            setTimeout(() => { detailsForm.style.display = 'none'; }, 500);
             document.getElementById('loader').style.display = 'block';
 
             try {
-                // Отправляем на наш Node.js сервер
-                const response = await fetch('/api/analyze', {
+                // ВАЖНО: Вставь сюда свою ссылку от Render вместо этой заглушки:
+                const RENDER_URL = 'https://calories-98um.onrender.com'; 
+                
+                const response = await fetch(`${RENDER_URL}/api/analyze`, {
                     method: 'POST',
                     body: formData
                 });
@@ -202,14 +220,15 @@
                 resultDiv.style.display = 'block';
                 
                 if (data.success) {
-                    resultDiv.innerHTML = `<strong>Результат:</strong><br><br>${data.result}`;
-                    // Если захочешь, можно тут послать tg.sendData(...) чтобы закрыть веб-апп и вывести в чат
+                    // Используем регулярку, чтобы заменить переносы строк на <br> для HTML
+                    const formattedResult = data.result.replace(/\n/g, '<br>');
+                    resultDiv.innerHTML = `<strong>АНАЛИЗ ГОТОВ:</strong><br><br>${formattedResult}`;
                 } else {
-                    resultDiv.innerHTML = `Ошибка: ${data.error}`;
+                    resultDiv.innerHTML = `<strong>Ошибка:</strong><br>${data.error}`;
                 }
             } catch (err) {
                 document.getElementById('loader').style.display = 'none';
-                alert("Ошибка соединения с сервером");
+                alert("Ошибка соединения с сервером. Убедись, что Render запущен.");
             }
         }
     </script>
