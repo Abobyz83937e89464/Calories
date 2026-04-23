@@ -11,17 +11,31 @@ const WEB_APP_URL = 'https://calories-1-pitp.onrender.com/';
 
 const app = express();
 
-// 🔥 фикс Telegram 409
-const bot = new TelegramBot(TG_TOKEN);
-bot.deleteWebHook();
-bot.startPolling();
+// 🔥 ЛОГ ВСЕХ ЗАПРОСОВ (очень важно)
+app.use((req, res, next) => {
+    console.log(">>> REQUEST:", req.method, req.url);
+    next();
+});
 
+// 🔥 ВАЖНЫЕ middleware (фикс 404)
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// multer ПОСЛЕ middleware
 const upload = multer({ storage: multer.memoryStorage() });
+
+// 🔥 фикс Telegram 409
+const bot = new TelegramBot(TG_TOKEN);
+bot.deleteWebHook().catch(() => {});
+bot.stopPolling().catch(() => {});
+setTimeout(() => {
+    bot.startPolling();
+}, 1000);
 
 console.log("=== HF VISION SERVER START ===");
 
+// кнопка
 bot.onText(/\/start/, (msg) => {
     bot.sendMessage(msg.chat.id, '📸 Сканер готов! Открывай камеру.', {
         reply_markup: {
@@ -56,10 +70,11 @@ async function analyzeImage(buffer) {
 
 // 📸 API
 app.post('/api/analyze', upload.single('photo'), async (req, res) => {
-    console.log("\n=== НОВЫЙ ЗАПРОС ===");
+    console.log("\n=== /api/analyze HIT ===");
 
     try {
         if (!req.file) {
+            console.log("❌ ФАЙЛ НЕ ПРИШЕЛ");
             return res.status(400).json({
                 success: false,
                 error: 'Фото не дошло до сервера'
@@ -72,7 +87,6 @@ app.post('/api/analyze', upload.single('photo'), async (req, res) => {
 
         console.log(">>> Описание:", description);
 
-        // 🔥 простой расчет (чтобы не городить второй AI)
         const weight = req.body.weight || 150;
 
         const result = `
@@ -105,6 +119,15 @@ app.post('/api/analyze', upload.single('photo'), async (req, res) => {
 });
 
 
+// ❤️ тестовый маршрут (чтобы убедиться что API жив)
+app.get('/test', (req, res) => {
+    res.send('TEST OK');
+});
+
+// корень
+app.get('/', (req, res) => res.send('Server alive 🚀'));
+
+
 // ❤️ пинг каждые 14 минут
 setInterval(async () => {
     try {
@@ -115,8 +138,6 @@ setInterval(async () => {
     }
 }, 14 * 60 * 1000);
 
-
-app.get('/', (req, res) => res.send('Server alive 🚀'));
 
 const PORT = process.env.PORT || 10000;
 
