@@ -11,31 +11,25 @@ const WEB_APP_URL = 'https://calories-1-pitp.onrender.com/';
 
 const app = express();
 
-// 🔥 ЛОГ ВСЕХ ЗАПРОСОВ (очень важно)
+// 🔥 лог всех запросов
 app.use((req, res, next) => {
     console.log(">>> REQUEST:", req.method, req.url);
     next();
 });
 
-// 🔥 ВАЖНЫЕ middleware (фикс 404)
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// multer ПОСЛЕ middleware
 const upload = multer({ storage: multer.memoryStorage() });
 
-// 🔥 фикс Telegram 409
-const bot = new TelegramBot(TG_TOKEN);
+// 🔥 фикс Telegram (чтоб не спамил)
+const bot = new TelegramBot(TG_TOKEN, { polling: false });
 bot.deleteWebHook().catch(() => {});
-bot.stopPolling().catch(() => {});
-setTimeout(() => {
-    bot.startPolling();
-}, 1000);
+bot.startPolling();
 
 console.log("=== HF VISION SERVER START ===");
 
-// кнопка
 bot.onText(/\/start/, (msg) => {
     bot.sendMessage(msg.chat.id, '📸 Сканер готов! Открывай камеру.', {
         reply_markup: {
@@ -48,23 +42,44 @@ bot.onText(/\/start/, (msg) => {
 });
 
 
-// 🧠 HF анализ картинки
+// 🧠 HF с ретраем
 async function analyzeImage(buffer) {
     console.log(">>> HF анализ...");
 
-    const res = await axios.post(
-        "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large",
-        buffer,
-        {
-            headers: {
-                Authorization: `Bearer ${HF_TOKEN}`,
-                "Content-Type": "application/octet-stream"
-            },
-            timeout: 60000
-        }
-    );
+    for (let i = 0; i < 3; i++) {
+        try {
+            const res = await axios.post(
+                "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large",
+                buffer,
+                {
+                    headers: {
+                        Authorization: `Bearer ${HF_TOKEN}`,
+                        "Content-Type": "application/octet-stream"
+                    },
+                    timeout: 60000
+                }
+            );
 
-    return res.data[0].generated_text;
+            console.log("HF RESPONSE:", res.data);
+
+            if (res.data?.error) {
+                throw new Error(res.data.error);
+            }
+
+            return res.data[0]?.generated_text || "Не удалось распознать";
+
+        } catch (err) {
+            console.error(`HF ERROR [${i+1}]:`, err.response?.data || err.message);
+
+            // если модель грузится — подождём и повторим
+            if (i < 2) {
+                console.log("⏳ Повтор через 3 сек...");
+                await new Promise(r => setTimeout(r, 3000));
+            } else {
+                throw new Error("HuggingFace не отвечает");
+            }
+        }
+    }
 }
 
 
@@ -74,7 +89,7 @@ app.post('/api/analyze', upload.single('photo'), async (req, res) => {
 
     try {
         if (!req.file) {
-            console.log("❌ ФАЙЛ НЕ ПРИШЕЛ");
+            console.log("❌ Нет файла");
             return res.status(400).json({
                 success: false,
                 error: 'Фото не дошло до сервера'
@@ -108,27 +123,25 @@ app.post('/api/analyze', upload.single('photo'), async (req, res) => {
         });
 
     } catch (error) {
-        console.error("!!! ОШИБКА:", error.response?.data || error.message);
+        console.error("!!! SERVER ERROR:", error.message);
 
         res.status(500).json({
             success: false,
-            error: error.response?.data?.error || error.message,
-            stack: error.stack
+            error: error.message
         });
     }
 });
 
 
-// ❤️ тестовый маршрут (чтобы убедиться что API жив)
+// тест
 app.get('/test', (req, res) => {
     res.send('TEST OK');
 });
 
-// корень
 app.get('/', (req, res) => res.send('Server alive 🚀'));
 
 
-// ❤️ пинг каждые 14 минут
+// ❤️ пинг
 setInterval(async () => {
     try {
         await axios.get(WEB_APP_URL);
