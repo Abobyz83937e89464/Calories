@@ -1,7 +1,7 @@
 {
-  "name": "calorie-gemini-bot",
+  "name": "calorie-scanner",
   "version": "1.0.0",
-  "description": "AI Calorie Scanner using Gemini 1.5 Flash",
+  "description": "Final Fix",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
