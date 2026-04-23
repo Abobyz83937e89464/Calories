@@ -3,7 +3,7 @@ const multer = require('multer');
 const cors = require('cors');
 const axios = require('axios');
 
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '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';
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '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';
 const WEB_APP_URL = 'https://calories-1-pitp.onrender.com/';
 
 const app = express();
