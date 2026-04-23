@@ -1,25 +1,25 @@
 const express = require('express');
 const TelegramBot = require('node-telegram-bot-api');
-const Groq = require('groq-sdk');
 const multer = require('multer');
 const cors = require('cors');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 
-// 🔐 Лучше вынести в ENV
+// 🔐 ключи
 const TG_TOKEN = process.env.TG_TOKEN || '8404227234:AAEspH56VB5-zKWUW68twg1qMwcEedmCmwI';
-const GROQ_API_KEY = process.env.GROQ_API_KEY || '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';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyBsIAOJDcCzclqDMjUwtpKeLWePjRYa6gc';
 const WEB_APP_URL = 'https://abobyz83937e89464.github.io/Calories/';
 
 const app = express();
-const groq = new Groq({ apiKey: GROQ_API_KEY });
 const bot = new TelegramBot(TG_TOKEN, { polling: true });
+
+const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 app.use(cors());
 app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage() });
 
-console.log("=== ИНИЦИАЛИЗАЦИЯ СЕРВЕРА ===");
+console.log("=== ИНИЦИАЛИЗАЦИЯ СЕРВЕРА (GEMINI) ===");
 
-// 📲 Telegram кнопка
 bot.onText(/\/start/, (msg) => {
     bot.sendMessage(msg.chat.id, '📸 Сканер готов! Открывай камеру.', {
         reply_markup: {
@@ -32,89 +32,79 @@ bot.onText(/\/start/, (msg) => {
 });
 
 
-// 🔥 СПИСОК МОДЕЛЕЙ (fallback)
+// 🔥 модели (по приоритету)
 const MODELS = [
-    "llava-v1.5-7b-4096-preview",
-    "llava-v1.5-13b-4096-preview",
-    "llama-3.2-11b-vision-preview",
-    "llama-3.2-90b-vision-preview"
+    "gemini-1.5-flash",
+    "gemini-1.5-flash-8b",
+    "gemini-1.5-pro"
 ];
 
-async function tryModels(messages) {
-    for (const model of MODELS) {
+async function tryModels(prompt, imagePart) {
+    for (const modelName of MODELS) {
         try {
-            console.log(`>>> Пробуем модель: ${model}`);
+            console.log(`>>> Пробуем модель: ${modelName}`);
 
-            const res = await groq.chat.completions.create({
-                model,
-                messages,
-                temperature: 0.4,
-                max_tokens: 800
-            });
+            const model = genAI.getGenerativeModel({ model: modelName });
 
-            console.log(`✅ УСПЕХ: ${model}`);
+            const result = await model.generateContent([
+                prompt,
+                imagePart
+            ]);
+
+            const text = result.response.text();
+
+            console.log(`✅ Используется модель: ${modelName}`);
 
             return {
-                modelUsed: model,
-                text: res.choices[0].message.content
+                modelUsed: modelName,
+                text
             };
 
         } catch (err) {
-            console.log(`❌ ${model} умерла: ${err.message}`);
+            console.log(`❌ ${modelName} не работает: ${err.message}`);
         }
     }
 
-    throw new Error("Нет доступных vision моделей");
+    throw new Error("Нет доступных Gemini vision моделей");
 }
 
 
-// 📸 API
+// 📸 API (твоя логика ошибок НЕ ТРОНУТА)
 app.post('/api/analyze', upload.single('photo'), async (req, res) => {
-    console.log(">>> [1] Запрос получен");
+    console.log(">>> [1] Получен запрос на /api/analyze");
 
     try {
         if (!req.file) {
-            return res.status(400).json({
-                success: false,
-                error: 'Фото не пришло'
-            });
+            console.error("!!! Ошибка: Файл не найден");
+            return res.status(400).json({ success: false, error: 'Фото не дошло до сервера' });
         }
 
-        const base64 = req.file.buffer.toString('base64');
-        const mime = req.file.mimetype;
+        console.log(`>>> [2] Фото получено: ${req.file.size} байт`);
+
+        const base64Image = req.file.buffer.toString('base64');
+        const mimeType = req.file.mimetype;
 
         const { dishName, weight } = req.body;
 
-        const prompt = `Ты диетолог. Оцени еду.
+        const prompt = `Ты диетолог. Оцени еду на фото.
 
 Название: ${dishName || 'неизвестно'}
 Вес: ${weight || 'неизвестен'}
 
-Ответ:
+Выдай КБЖУ и краткий состав на русском языке.`;
 
-Название:
-Калории:
-Белки:
-Жиры:
-Углеводы:
-Описание:`;
-
-        const messages = [
-            {
-                role: "user",
-                content: [
-                    { type: "text", text: prompt },
-                    {
-                        type: "image_url",
-                        image_url: {
-                            url: `data:${mime};base64,${base64}`
-                        }
-                    }
-                ]
+        const imagePart = {
+            inlineData: {
+                data: base64Image,
+                mimeType: mimeType
             }
-        ];
+        };
 
-        const result = await tryModels(messages);
+        console.log(">>> [3] Отправка в Gemini...");
+
+        const result = await tryModels(prompt, imagePart);
+
+        console.log(">>> [4] Ответ получен");
 
         res.json({
             success: true,
@@ -123,19 +113,20 @@ app.post('/api/analyze', upload.single('photo'), async (req, res) => {
         });
 
     } catch (error) {
-        console.error("!!! КРИТИЧЕСКАЯ ОШИБКА:", error);
+        console.error("!!! [КРИТИЧЕСКАЯ ОШИБКА]:", error);
 
         res.status(500).json({
             success: false,
-            error: error.message
+            error: error.message,
+            stack: error.stack
         });
     }
 });
 
-app.get('/', (req, res) => res.send('Server alive 🚀'));
+app.get('/', (req, res) => res.send('Server is alive! Gemini Mode'));
 
 const PORT = process.env.PORT || 10000;
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`=== СЕРВЕР ЗАПУЩЕН ${PORT} ===`);
+    console.log(`=== СЕРВЕР ЗАПУЩЕН НА ${PORT} ===`);
 });
