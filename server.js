@@ -5,7 +5,7 @@ const multer = require('multer');
 const cors = require('cors');
 
 // Данные (уже вшиты)
-const TG_TOKEN = '8404227234:AAHAVFS9mH4obEgkoPjIT5l9hD9WVAeJPIc';
+const TG_TOKEN = '8404227234:AAEJDrxC5Kn4tY_ny3lBGrsdRaDpDUUj2YU';
 const GEMINI_KEY = 'AIzaSyBsIAOJDcCzclqDMjUwtpKeLWePjRYa6gc';
 const WEB_APP_URL = 'https://abobyz83937e89464.github.io/Calories/';
 
