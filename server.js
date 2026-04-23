@@ -2,74 +2,86 @@ const express = require('express');
 const TelegramBot = require('node-telegram-bot-api');
 const Groq = require('groq-sdk');
 const multer = require('multer');
-const path = require('path');
 const cors = require('cors');
 const https = require('https');
 
-// Твои конфиги
+// === КОНФИГУРАЦИЯ ===
 const TELEGRAM_TOKEN = '8404227234:AAFMLGVkxz6Qf3J7m61KR8BNni4kDP1B9t8';
 const GROQ_API_KEY = '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';
 
-// Ссылка на твой сервер на Render (замени после создания веб-сервиса)
-const APP_URL = 'https://твой-проект.onrender.com'; 
+// Ссылка на твой фронтенд на GitHub
+const GITHUB_WEB_APP_URL = 'https://abobyz83937e89464.github.io/Calories/';
 
-// Инициализация
+// Авто-определение URL сервера на Render для пинга
+const SERVER_SELF_URL = process.env.RENDER_EXTERNAL_URL || `http://localhost:${process.env.PORT || 3000}`;
+
+// === ИНИЦИАЛИЗАЦИЯ ===
 const bot = new TelegramBot(TELEGRAM_TOKEN, { polling: true });
 const groq = new Groq({ apiKey: GROQ_API_KEY });
 const app = express();
 
 app.use(cors());
-app.use(express.static('public'));
 app.use(express.json());
 
+// Настройка работы с изображениями (в памяти)
 const upload = multer({ storage: multer.memoryStorage() });
 
 // === СИСТЕМА АНТИ-СОН (SELF-PING) ===
-// Пингует сервер каждые 14 минут, чтобы Render не усыплял процесс
+// Каждые 14 минут стучимся по своему же адресу
 setInterval(() => {
-    https.get(APP_URL, (res) => {
-        console.log(`Self-ping status: ${res.statusCode} (Keeping the engine warm...)`);
-    }).on('error', (err) => {
-        console.error('Self-ping error:', err.message);
-    });
-}, 14 * 60 * 1000); // 14 минут в миллисекундах
+    if (process.env.RENDER_EXTERNAL_URL) {
+        https.get(SERVER_SELF_URL, (res) => {
+            console.log(`Ping sent to ${SERVER_SELF_URL}: Status ${res.statusCode}`);
+        }).on('error', (err) => {
+            console.error('Self-ping error:', err.message);
+        });
+    } else {
+        console.log("Local mode: Self-ping skipped.");
+    }
+}, 14 * 60 * 1000); 
 
-
-// === TELEGRAM BOT LOGIC ===
+// === ЛОГИКА ТЕЛЕГРАМ БОТА ===
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     
-    bot.sendMessage(chatId, 'Привет! Нажми кнопку ниже, чтобы начать считать калории 🍏', {
+    bot.sendMessage(chatId, 'Привет! Готов считать калории? Нажми кнопку ниже, чтобы открыть сканер 🍏', {
         reply_markup: {
             inline_keyboard: [[
-                { text: '📸 Открыть сканер еды', web_app: { url: APP_URL } }
+                { 
+                    text: '📸 Считать калории', 
+                    web_app: { url: GITHUB_WEB_APP_URL } 
+                }
             ]]
         }
     });
 });
 
-// === API ДЛЯ РАБОТЫ С GROQ (VISION) ===
+// === API ДЛЯ АНАЛИЗА ФОТО (GROQ Llama 3.2 Vision) ===
 app.post('/api/analyze', upload.single('photo'), async (req, res) => {
     try {
         const { dishName, weight, sauces, extraInfo } = req.body;
-        const imageBuffer = req.file.buffer;
-        const base64Image = imageBuffer.toString('base64');
+        
+        if (!req.file) {
+            return res.status(400).json({ success: false, error: 'Файл не получен' });
+        }
 
-        // Креативный промпт, чтобы ответы не повторялись для разных юзеров
+        const base64Image = req.file.buffer.toString('base64');
+
         const promptText = `
-Ты опытный диетолог с чувством юмора. Твоя цель: максимально точно разобрать еду по фото.
-ВАЖНО: Каждый раз пиши ответ в новом стиле (можешь менять тон от дружеского до строго-научного), чтобы пользователи не видели одинаковых шаблонов.
+Ты - профессиональный ИИ-нутрициолог. Проанализируй это фото еды.
+Отвечай всегда по-разному, используя живой язык, чтобы общение не было скучным.
 
-Данные от пользователя:
-- Название: ${dishName || 'Неизвестно'}
-- Вес: ${weight || 'На глаз'}
-- Соусы: ${sauces || 'Без соусов'}
-- Контекст: ${extraInfo || 'Нет уточнений'}
+Вводные данные:
+- Название блюда: ${dishName || 'Не указано'}
+- Вес: ${weight || 'Неизвестно'}
+- Соусы: ${sauces || 'Нет'}
+- Дополнительно: ${extraInfo || 'Информации нет'}
 
-Выдай результат по пунктам:
-1. Оценка КБЖУ (Каллории, Белки, Жиры, Углеводы) — старайся быть максимально точным.
-2. Состав (что ты видишь на тарелке).
-3. Краткий совет (например, "добавь овощей" или "отличный выбор для завтрака").
+Твой ответ должен содержать:
+1. КБЖУ (Ккал, Белки, Жиры, Углеводы) — дай самую точную оценку на основе фото и веса.
+2. Подробный состав блюда (что ты видишь).
+3. Маленький совет или интересный факт об этой еде.
+Пиши кратко, но информативно.
         `;
 
         const response = await groq.chat.completions.create({
@@ -79,27 +91,39 @@ app.post('/api/analyze', upload.single('photo'), async (req, res) => {
                     role: "user",
                     content: [
                         { type: "text", text: promptText },
-                        { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
+                        { 
+                            type: "image_url", 
+                            image_url: { url: `data:image/jpeg;base64,${base64Image}` } 
+                        }
                     ]
                 }
             ],
-            temperature: 0.8, // Чуть выше для разнообразия ответов
-            max_tokens: 1024,
+            temperature: 0.8,
+            max_tokens: 800,
         });
 
-        res.json({ success: true, result: response.choices[0].message.content });
+        res.json({ 
+            success: true, 
+            result: response.choices[0].message.content 
+        });
+
     } catch (error) {
         console.error("Ошибка Groq:", error);
-        res.status(500).json({ success: false, error: 'Ошибка анализа. Проверь освещение на фото.' });
+        res.status(500).json({ 
+            success: false, 
+            error: 'Не удалось распознать еду. Попробуй другое фото.' 
+        });
     }
 });
 
-// Роут для проверки работоспособности (на него и будет стучать пингер)
+// Роут для проверки (для пингера)
 app.get('/', (req, res) => {
-    res.send('Server is alive and kicking!');
+    res.send('Calorie Bot Server is Running!');
 });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-    console.log(`Server started on port ${PORT}. Anti-sleep active.`);
+    console.log(`--- СЕРВЕР ЗАПУЩЕН ---`);
+    console.log(`Порт: ${PORT}`);
+    console.log(`URL для пинга: ${SERVER_SELF_URL}`);
 });
