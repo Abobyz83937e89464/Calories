@@ -23,10 +23,8 @@ app.use(express.urlencoded({ extended: true }));
 
 const upload = multer({ storage: multer.memoryStorage() });
 
-// 🔥 фикс Telegram (чтоб не спамил)
+// ❗ УБИРАЕМ ПРОБЛЕМУ С TELEGRAM 409
 const bot = new TelegramBot(TG_TOKEN, { polling: false });
-bot.deleteWebHook().catch(() => {});
-bot.startPolling();
 
 console.log("=== HF VISION SERVER START ===");
 
@@ -42,43 +40,34 @@ bot.onText(/\/start/, (msg) => {
 });
 
 
-// 🧠 HF с ретраем
+// 🧠 HF анализ (ПРАВИЛЬНЫЙ)
 async function analyzeImage(buffer) {
     console.log(">>> HF анализ...");
 
-    for (let i = 0; i < 3; i++) {
-        try {
-            const res = await axios.post(
-                "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large",
-                buffer,
-                {
-                    headers: {
-                        Authorization: `Bearer ${HF_TOKEN}`,
-                        "Content-Type": "application/octet-stream"
-                    },
-                    timeout: 60000
-                }
-            );
-
-            console.log("HF RESPONSE:", res.data);
-
-            if (res.data?.error) {
-                throw new Error(res.data.error);
+    try {
+        const res = await axios.post(
+            "https://api-inference.huggingface.co/models/Salesforce/blip-image-captioning-large",
+            buffer,
+            {
+                headers: {
+                    Authorization: `Bearer ${HF_TOKEN}`,
+                    "Content-Type": "application/octet-stream"
+                },
+                timeout: 60000
             }
+        );
 
-            return res.data[0]?.generated_text || "Не удалось распознать";
+        console.log("HF RESPONSE:", res.data);
 
-        } catch (err) {
-            console.error(`HF ERROR [${i+1}]:`, err.response?.data || err.message);
-
-            // если модель грузится — подождём и повторим
-            if (i < 2) {
-                console.log("⏳ Повтор через 3 сек...");
-                await new Promise(r => setTimeout(r, 3000));
-            } else {
-                throw new Error("HuggingFace не отвечает");
-            }
+        if (!Array.isArray(res.data)) {
+            throw new Error("HF вернул не массив");
         }
+
+        return res.data[0]?.generated_text || "Не удалось распознать";
+
+    } catch (err) {
+        console.error("HF ERROR:", err.response?.data || err.message);
+        throw new Error("Ошибка HuggingFace");
     }
 }
 
@@ -89,7 +78,6 @@ app.post('/api/analyze', upload.single('photo'), async (req, res) => {
 
     try {
         if (!req.file) {
-            console.log("❌ Нет файла");
             return res.status(400).json({
                 success: false,
                 error: 'Фото не дошло до сервера'
