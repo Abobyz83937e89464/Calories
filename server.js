@@ -6,7 +6,7 @@ const axios = require('axios');
 
 // 🔐 ключи
 const TG_TOKEN = process.env.TG_TOKEN || '8404227234:AAHNfv3XZji2E8r6EdOquy7SJ3ajPUuI-Ww';
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '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';
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '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';
 const WEB_APP_URL = 'https://calories-1-pitp.onrender.com/';
 
 const app = express();
