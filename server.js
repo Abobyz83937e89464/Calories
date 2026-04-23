@@ -5,7 +5,7 @@ const cors = require('cors');
 const axios = require('axios');
 
 // 🔐 ключи
-const TG_TOKEN = process.env.TG_TOKEN || '8404227234:AAH_f7x5t_vP6-k_KNx3oQVY07jDZ2MNV2Y';
+const TG_TOKEN = process.env.TG_TOKEN || '8404227234:AAEe634ABLyQ4o1NPtoZwiynXMhA2zPXMA0';
 const HF_TOKEN = process.env.HF_TOKEN || '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';
 const WEB_APP_URL = 'https://calories-1-pitp.onrender.com/';
 
