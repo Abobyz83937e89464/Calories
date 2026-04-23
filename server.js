@@ -20,18 +20,23 @@ app.use(cors());
 app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Список моделей для перебора (от самой легкой к самой мощной)
-const VISION_MODELS = ["gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-1.5-pro"];
+// Список моделей для перебора. В начале — самые стабильные и доступные.
+const VISION_MODELS = [
+    "gemini-1.5-flash", 
+    "gemini-1.5-flash-latest", 
+    "gemini-1.5-pro",
+    "gemini-pro-vision" // Старая, но надежная модель
+];
 
 // Анти-сон
 setInterval(() => {
     if (process.env.RENDER_EXTERNAL_URL) {
-        https.get(APP_URL, (res) => {}).on('error', (e) => console.error('Ping error'));
+        https.get(APP_URL, (res) => {}).on('error', (e) => {});
     }
 }, 14 * 60 * 1000);
 
 bot.onText(/\/start/, (msg) => {
-    bot.sendMessage(msg.chat.id, '📸 Сканер калорий готов!', {
+    bot.sendMessage(msg.chat.id, '📸 Сканер калорий готов к работе!', {
         reply_markup: {
             inline_keyboard: [[{ text: 'Открыть камеру', web_app: { url: GITHUB_WEB_APP_URL } }]]
         }
@@ -39,12 +44,17 @@ bot.onText(/\/start/, (msg) => {
 });
 
 app.post('/api/analyze', upload.single('photo'), async (req, res) => {
-    console.log("--- НОВЫЙ ЗАПРОС ---");
+    console.log("--- НОВЫЙ ЗАПРОС НА АНАЛИЗ ---");
     
-    if (!req.file) return res.status(400).json({ success: false, error: 'Нет файла' });
+    if (!req.file) return res.status(400).json({ success: false, error: 'Файл не получен' });
 
     const { dishName, weight, sauces, extraInfo } = req.body;
-    const prompt = `Ты диетолог. Оцени еду на фото. Данные: ${dishName}, ${weight}г, соус: ${sauces}, доп: ${extraInfo}. Выдай КБЖУ и состав.`;
+    const prompt = `Ты диетолог. Оцени еду на фото. 
+    Блюдо: ${dishName || 'не указано'}, 
+    Вес: ${weight || 'не указан'}, 
+    Соус: ${sauces || 'нет'}, 
+    Доп: ${extraInfo || 'нет'}. 
+    Выдай КБЖУ и краткий состав. Отвечай дружелюбно.`;
     
     const imagePart = {
         inlineData: {
@@ -53,42 +63,48 @@ app.post('/api/analyze', upload.single('photo'), async (req, res) => {
         }
     };
 
-    // Перебор моделей
     let lastError = null;
+
+    // Пытаемся найти работающую модель
     for (const modelName of VISION_MODELS) {
         try {
-            console.log(`Пробую модель: ${modelName}...`);
+            console.log(`Пробую запустить: ${modelName}...`);
             const model = genAI.getGenerativeModel({ model: modelName });
+            
             const result = await model.generateContent([prompt, imagePart]);
             const response = await result.response;
             const text = response.text();
 
-            console.log(`Успех с моделью ${modelName}!`);
+            console.log(`УСПЕХ: Модель ${modelName} сработала!`);
             return res.json({ success: true, result: text });
+            
         } catch (error) {
-            console.error(`Ошибка с ${modelName}:`, error.message);
+            console.error(`Модель ${modelName} выдала ошибку:`, error.message);
             lastError = error;
-            // Если ошибка связана с ключом или регионом, пробуем следующую
-            continue; 
+            // Если ошибка 404 или 403, идем к следующей модели в списке
         }
     }
 
-    // Если ни одна модель не сработала
-    console.error("!!! ВСЕ МОДЕЛИ ОТКАЗАЛИ !!!");
-    console.error("Детальная ошибка:", lastError);
-
-    let finalMsg = lastError.message;
-    if (finalMsg.includes("location is not supported")) {
-        finalMsg = "Google блокирует доступ из региона, где находится сервер Render. Попробуй сменить регион сервера на US в настройках Render.";
+    // Если все модели "упали"
+    console.error("!!! КРИТИЧЕСКАЯ ОШИБКА: НИ ОДНА МОДЕЛЬ НЕ ОТВЕТИЛА !!!");
+    
+    let userFriendlyError = "Все модели заняты или недоступны.";
+    
+    // Если ошибка региональная
+    if (lastError.message.toLowerCase().includes("location") || lastError.message.includes("not supported")) {
+        userFriendlyError = "Google блокирует запросы с твоего сервера. В настройках Render измени регион (Region) на US (Oregon или Ohio).";
+    } else if (lastError.message.includes("404")) {
+        userFriendlyError = "Ошибка 404: Модель не найдена в твоем регионе. Попробуй сменить регион сервера на USA в панели Render.";
     }
 
     res.status(500).json({ 
         success: false, 
-        error: `Ошибка API: ${finalMsg}` 
+        error: userFriendlyError,
+        debug: lastError.message 
     });
 });
 
-app.get('/', (req, res) => res.send('Server Running'));
+app.get('/', (req, res) => res.send('Server status: OK'));
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server started on ${PORT}`));
+app.listen(PORT, () => console.log(`--- СЕРВЕР ЗАПУЩЕН НА ПОРТУ ${PORT} ---`));
