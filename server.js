@@ -6,7 +6,7 @@ const cors = require('cors');
 const https = require('https');
 
 // === КОНФИГУРАЦИЯ (Твои данные) ===
-const TG_TOKEN = '8404227234:AAFMLGVkxz6Qf3J7m61KR8BNni4kDP1B9t8';
+const TG_TOKEN = '8404227234:AAH4KrNWqrtMmTz9PHd3QJVeLCPWka-JR5E';
 const GEMINI_KEY = 'AIzaSyBsIAOJDcCzclqDMjUwtpKeLWePjRYa6gc';
 const WEB_APP_URL = 'https://abobyz83937e89464.github.io/Calories/';
 
