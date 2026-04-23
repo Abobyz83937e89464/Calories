@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Сканер Калорий</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --text-color: #ffffff;
+            --accent: #ff9800; /* Сочный оранжевый */
+            --input-bg: #1e1e1e;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+            overflow-x: hidden;
+        }
+        h2 { margin-top: 0; }
+        
+        /* Кнопка камеры */
+        .camera-btn-wrapper { margin-top: 50px; }
+        .camera-btn {
+            background-color: var(--accent);
+            color: #000;
+            padding: 15px 30px;
+            font-size: 18px;
+            font-weight: bold;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(255, 152, 0, 0.4);
+            transition: transform 0.2s;
+        }
+        .camera-btn:active { transform: scale(0.95); }
+        
+        /* Скрытый инпут для камеры */
+        input[type="file"] { display: none; }
+
+        /* Превью картинки */
+        #imagePreview {
+            max-width: 100%;
+            border-radius: 15px;
+            margin-top: 20px;
+            display: none;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+        }
+
+        /* Анимированная форма (спрятана по умолчанию) */
+        .form-container {
+            display: none;
+            opacity: 0;
+            transform: translateY(30px);
+            transition: all 0.5s ease;
+            background: #1e1e1e;
+            padding: 20px;
+            border-radius: 15px;
+            margin-top: 20px;
+            text-align: left;
+        }
+        .form-container.show {
+            display: block;
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            margin: 8px 0 15px;
+            border: 1px solid #333;
+            border-radius: 10px;
+            background: #2c2c2c;
+            color: white;
+            box-sizing: border-box;
+        }
+        
+        .submit-btn {
+            background: #4CAF50;
+            color: white;
+            width: 100%;
+            padding: 15px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
+        /* Анимация загрузки */
+        #loader { display: none; margin-top: 20px; color: var(--accent); font-weight: bold; }
+        
+        /* Результат */
+        #result {
+            margin-top: 20px;
+            padding: 15px;
+            background: #2a2a2a;
+            border-radius: 10px;
+            text-align: left;
+            display: none;
+            white-space: pre-wrap; /* чтобы переносы строк из ИИ сохранялись */
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Умный счетчик 🍏</h2>
+    <p>Сфоткай еду, и нейросеть всё посчитает.</p>
+
+    <div class="camera-btn-wrapper" id="startWrapper">
+        <label class="camera-btn">
+            📸 Включить камеру
+            <input type="file" accept="image/*" capture="environment" id="fileInput">
+        </label>
+    </div>
+
+    <img id="imagePreview" alt="Превью еды">
+
+    <div class="form-container" id="detailsForm">
+        <h3>Уточни детали (необязательно)</h3>
+        
+        <label>Что за блюдо?</label>
+        <input type="text" id="dishName" placeholder="Например: Борщ, Овсянка">
+
+        <label>Примерный вес (г)?</label>
+        <input type="text" id="weight" placeholder="Например: 250">
+
+        <label>Добавили соусы/масло?</label>
+        <input type="text" id="sauces" placeholder="Майонез, кетчуп, оливковое">
+
+        <label>Дополнительно (размер тарелки, ложки)</label>
+        <input type="text" id="extraInfo" placeholder="Большая тарелка, 3 столовые ложки">
+
+        <button class="submit-btn" onclick="sendData()">Отправить на анализ 🚀</button>
+    </div>
+
+    <div id="loader">Нейросеть думает... ⏳</div>
+    <div id="result"></div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand(); // Открываем на весь экран
+
+        const fileInput = document.getElementById('fileInput');
+        const imagePreview = document.getElementById('imagePreview');
+        const detailsForm = document.getElementById('detailsForm');
+        const startWrapper = document.getElementById('startWrapper');
+
+        let selectedFile = null;
+
+        // Когда фотка сделана/выбрана
+        fileInput.addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file) {
+                selectedFile = file;
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    imagePreview.src = e.target.result;
+                    imagePreview.style.display = 'block';
+                    
+                    // Прячем кнопку камеры, показываем форму с анимацией
+                    startWrapper.style.display = 'none';
+                    // Небольшая задержка для красивой анимации выезда
+                    setTimeout(() => {
+                        detailsForm.classList.add('show');
+                    }, 100);
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Отправка на сервер
+        async function sendData() {
+            if (!selectedFile) return alert("Сначала сделай фото!");
+
+            const formData = new FormData();
+            formData.append('photo', selectedFile);
+            formData.append('dishName', document.getElementById('dishName').value);
+            formData.append('weight', document.getElementById('weight').value);
+            formData.append('sauces', document.getElementById('sauces').value);
+            formData.append('extraInfo', document.getElementById('extraInfo').value);
+
+            detailsForm.style.display = 'none';
+            document.getElementById('loader').style.display = 'block';
+
+            try {
+                // Отправляем на наш Node.js сервер
+                const response = await fetch('/api/analyze', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                document.getElementById('loader').style.display = 'none';
+                const resultDiv = document.getElementById('result');
+                resultDiv.style.display = 'block';
+                
+                if (data.success) {
+                    resultDiv.innerHTML = `<strong>Результат:</strong><br><br>${data.result}`;
+                    // Если захочешь, можно тут послать tg.sendData(...) чтобы закрыть веб-апп и вывести в чат
+                } else {
+                    resultDiv.innerHTML = `Ошибка: ${data.error}`;
+                }
+            } catch (err) {
+                document.getElementById('loader').style.display = 'none';
+                alert("Ошибка соединения с сервером");
+            }
+        }
+    </script>
+</body>
+</html>
